@@ -26,17 +26,19 @@ For example, the database history can answer: “Which securities belonged to NI
 
 ## Current status
 
-The last retained run in this repository was a dry run on **2 July 2026**. It completed in approximately 12 seconds and produced:
+The production copy is deployed on the RDP host `EC2AMAZ-Q9NK0NG` through a Google Drive-mounted folder. Windows Task Scheduler runs it on the **first calendar day of every month**.
+
+The latest retained production validation was a full run on **3 July 2026**. It completed successfully, updated PostgreSQL, and produced:
 
 | Index | Rows produced | ISINs missing | Result |
 |---|---:|---:|---|
 | NIFTY 100 | 100 | 0 | Expected count |
 | NIFTY MIDCAP 150 | 150 | 0 | Expected count |
 | NIFTY SMALLCAP 250 | 250 | 0 | Expected count |
-| NIFTY MICROCAP 250 | 249 | 0 | One duplicate NSE symbol removed |
-| **Total** | **749** | **0** | Expected total is 750 |
+| NIFTY MICROCAP 250 | 250 | 0 | Expected count after one duplicate NSE row was removed |
+| **Total** | **750** | **0** | Expected total |
 
-The 249-row Microcap result is explained under [Known issues and limitations](#known-issues-and-limitations). Treat these figures as evidence from that run, not as permanent expected market data.
+The production CSVs were rechecked on 16 July 2026 and contained no duplicate symbols. The deployed Python script and `requirements.txt` were byte-for-byte identical to the Git repository at that time. Treat these figures as evidence from that run, not as permanent expected market data.
 
 ## How the job works
 
@@ -75,11 +77,15 @@ All application logic is in `nse_index_constituents.py`. The execution flow is:
 | `db_config.yaml` | Database credentials and optional Slack webhook | **No — ignored; contains secrets** |
 | `nse_scraper.log` | Rotating execution log, 5 MB with three backups | No — ignored |
 | `.venv/` | Local Python virtual environment | No — ignored |
+| `nse_index_scraper_job.bat` | Production RDP launcher stored in the Google Drive copy | No — not currently in this Git repository |
 
 ## Prerequisites
 
 - Windows or another environment capable of running Python
 - Python 3.12 recommended (the retained virtual environment uses Python 3.12.10)
+- For production: access to RDP host `EC2AMAZ-Q9NK0NG`
+- Google Drive for desktop running on the RDP host with the production folder mounted as `G:`
+- Access to the RDP Anaconda environment `C:\Users\wm-eikon-user\anaconda3\envs\aa_rebal`
 - Network access to `www.nseindia.com`
 - Network access and read permission to the `windmill` PostgreSQL database
 - Read permission on `symbology_changes`
@@ -113,6 +119,81 @@ wm_price_db:
 
 Do not commit this file. The repository's `.gitignore` already excludes YAML files, but check `git status` before every commit.
 
+## Production deployment: RDP, Google Drive, and Task Scheduler
+
+The Git repository is the source of truth for the code and documentation. The scheduled runtime is a separate Google Drive copy on the RDP server.
+
+| Setting | Production value |
+|---|---|
+| RDP host | `EC2AMAZ-Q9NK0NG` |
+| Schedule | Monthly, on the first calendar day of every month |
+| Scheduler | Windows Task Scheduler |
+| Launcher | `nse_index_scraper_job.bat` |
+| Python executable | `C:\Users\wm-eikon-user\anaconda3\envs\aa_rebal\python.exe` |
+| Execution mode | Full run: files plus PostgreSQL update |
+| Production log | `nse_scraper.log` in the Google Drive project folder |
+
+Production project directory:
+
+```text
+G:\.shortcut-targets-by-id\0B7f_UMMZHM_JNXljMVVXY2VPcHM\Investment Research_N\Shubham_Shreshtha\scrapper codes
+```
+
+The batch launcher contains:
+
+```bat
+@echo off
+setlocal
+
+set PROJECT_DIR="G:\.shortcut-targets-by-id\0B7f_UMMZHM_JNXljMVVXY2VPcHM\Investment Research_N\Shubham_Shreshtha\scrapper codes"
+set PYTHON_EXE="C:\Users\wm-eikon-user\anaconda3\envs\aa_rebal\python.exe"
+set SCRIPT="nse_index_constituents.py"
+
+cd /d "%PROJECT_DIR%" || exit /b %ERRORLEVEL%
+"%PYTHON_EXE%" "%SCRIPT%"
+```
+
+The launcher changes to the Drive directory before starting Python. This is required because the scraper reads `db_config.yaml` and writes logs and outputs using relative paths. It does not pass `--dry-run`, so every scheduled execution is a full database run.
+
+### Important environment warning
+
+The `.venv` present in the Google Drive folder is a copied developer environment. Its metadata points back to `D:\scrapper codes\.venv` and it is **not** the environment used by Task Scheduler. Production deliberately uses the RDP-owned `aa_rebal` Anaconda environment from the batch file. Do not change the scheduled action to use the copied `.venv`.
+
+### Task Scheduler configuration
+
+The scheduled task must:
+
+- trigger monthly on day `1`;
+- run under an RDP account that can access the `G:` Google Drive mount, database, and NSE website;
+- start `nse_index_scraper_job.bat` or call it through `cmd.exe`;
+- allow enough runtime for network and database operations;
+- retain task history; and
+- be monitored through Task Scheduler history, `nse_scraper.log`, Slack, and database validation.
+
+The Task Scheduler task name, exact start time, run-as account, and credential owner are not stored in this repository or the Drive folder. The successor must record these values during handover by opening Task Scheduler on the RDP host.
+
+### Updating the production copy
+
+After a code or dependency change is merged into GitHub:
+
+1. Copy the approved `nse_index_constituents.py` and `requirements.txt` into the Google Drive production directory.
+2. Do **not** overwrite `db_config.yaml`; it contains production secrets.
+3. Do not copy a local `.venv` to production.
+4. If dependencies changed, install them into the interpreter used by the batch file:
+
+   ```powershell
+   C:\Users\wm-eikon-user\anaconda3\envs\aa_rebal\python.exe -m pip install -r requirements.txt
+   ```
+
+5. From the RDP host and production directory, perform a dry run with the same interpreter:
+
+   ```powershell
+   C:\Users\wm-eikon-user\anaconda3\envs\aa_rebal\python.exe nse_index_constituents.py --dry-run
+   ```
+
+6. Compare the deployed script and requirements with the approved Git version, review the log, and validate all output counts.
+7. Use Task Scheduler's **Run** action for an attended full-run test only when a database update is intended.
+
 ## Running the scraper
 
 Always run the script from the repository root. Output and configuration paths are relative to the current working directory.
@@ -133,29 +214,27 @@ This writes CSV and Excel output but does not create, alter, delete, or insert r
 .\.venv\Scripts\python.exe nse_index_constituents.py
 ```
 
-This writes files and updates `index_constituents_monthly`. The recommended cadence is **once per month**, after any expected index rebalancing has taken effect.
+This writes files and updates `index_constituents_monthly`. In production, Windows Task Scheduler performs this command through `nse_index_scraper_job.bat` on the first calendar day of every month.
 
-There is no scheduler definition in this repository. If automation is required, configure the team's scheduler or Windmill flow to:
-
-- use the virtual environment's Python executable;
-- set this repository as the working directory;
-- preserve access to `db_config.yaml`;
-- retain or ship `nse_scraper.log`; and
-- alert on log/Slack anomalies as well as process exit status.
+The scheduler definition itself is not exported into this Git repository. Any change to its trigger, action, account, or retry settings must be documented here and in the handover record.
 
 ## Monthly operating runbook
 
 ### 1. Before the run
 
+- Before the first day of the month, confirm the RDP host is available and Google Drive for desktop has mounted the production directory as `G:`.
+- Check that the Windows Task Scheduler task is enabled and its next-run date is the first calendar day of the coming month.
 - Confirm database and NSE network access from the execution host.
 - Confirm `db_config.yaml` is present and has the correct database target.
 - Check that the Slack webhook and `_SLACK_MENTIONS` still point to the owning team.
-- Activate the environment and run `pip check` if dependencies or the host recently changed.
+- Run `C:\Users\wm-eikon-user\anaconda3\envs\aa_rebal\python.exe -m pip check` if dependencies or the host recently changed.
 
 ### 2. Execute a dry run
 
+Routine monthly production execution is automatic. Use this dry-run command manually on the RDP host after deployment or when investigating a problem:
+
 ```powershell
-.\.venv\Scripts\python.exe nse_index_constituents.py --dry-run
+C:\Users\wm-eikon-user\anaconda3\envs\aa_rebal\python.exe nse_index_constituents.py --dry-run
 ```
 
 Review the final console summary and `nse_scraper.log`. Investigate:
@@ -179,11 +258,13 @@ Check that all four CSVs were updated, the workbook has four sheets, symbols are
 
 ### 4. Execute the full run
 
-After the dry-run output is acceptable:
+For the normal monthly cycle, allow Task Scheduler to launch `nse_index_scraper_job.bat`. For an attended recovery or deployment test, use Task Scheduler's **Run** action or run:
 
 ```powershell
-.\.venv\Scripts\python.exe nse_index_constituents.py
+& "G:\.shortcut-targets-by-id\0B7f_UMMZHM_JNXljMVVXY2VPcHM\Investment Research_N\Shubham_Shreshtha\scrapper codes\nse_index_scraper_job.bat"
 ```
+
+On the first day of the month, verify that Task Scheduler reports completion and that `nse_scraper.log` contains a new `FULL RUN` entry from `EC2AMAZ-Q9NK0NG`. Do not rely on Task Scheduler status alone; continue with the file and database checks below.
 
 ### 5. Validate PostgreSQL
 
@@ -274,7 +355,9 @@ The script opens `db_config.yaml` and writes outputs using relative paths. Runni
 
 | Symptom | Likely cause | Action |
 |---|---|---|
-| `FileNotFoundError: db_config.yaml` | Wrong working directory or missing secret file | Run from the repository root and restore the config through the approved secret channel |
+| Scheduled task does not start or cannot find `G:` | Google Drive is not mounted for the task's run-as account | Sign in to the RDP host with the task account, confirm Google Drive for desktop is running, verify the `G:` path, and rerun the task |
+| Batch reports that Python cannot be found | The `aa_rebal` environment moved or the task is running on the wrong host/account | Verify `C:\Users\wm-eikon-user\anaconda3\envs\aa_rebal\python.exe` and update the batch file only after confirming the replacement environment |
+| `FileNotFoundError: db_config.yaml` | Wrong working directory or missing production secret file | Run from the project directory and restore the config through the approved secret channel |
 | PostgreSQL authentication or connection error | Invalid credentials, VPN/network issue, or database unavailable | Test connectivity and obtain current credentials from the database owner |
 | `symbology_changes` query fails | Missing table/columns or insufficient read permission | Confirm the upstream schema and grant read access; the query expects `new_ticker`, `new_isin`, and `updated_at` |
 | NSE homepage or market page returns non-200 | NSE blocking, network/proxy issue, or stale TLS fingerprint | Check host connectivity, proxy policy, and the `curl_cffi` impersonation target |
@@ -308,7 +391,7 @@ No automated test suite is currently included, so the dry run and data validatio
 - Do not paste credentials or webhook URLs into chat, email, tickets, logs, screenshots, or this README.
 - Rotate credentials and webhook access according to the firm's offboarding policy.
 - Recreate `.venv` on the successor's machine rather than copying it.
-- Review database grants, scheduler/service-account ownership, host access, and Slack ownership during the transfer.
+- Review database grants, RDP access, Google Drive ownership, scheduler/service-account ownership, the `aa_rebal` environment, and Slack ownership during the transfer.
 
 ## Successor handover checklist
 
@@ -317,7 +400,11 @@ No automated test suite is currently included, so the dry run and data validatio
 - [ ] `symbology_changes` ownership and data-refresh process explained
 - [ ] Destination table permissions tested with a full run
 - [ ] Slack webhook and `_SLACK_MENTIONS` reassigned
-- [ ] Scheduler or monthly calendar reminder transferred
+- [ ] RDP host access transferred and tested
+- [ ] Google Drive production-folder access transferred and `G:` mount verified
+- [ ] Task Scheduler task name, exact start time, run-as account, and credential owner recorded
+- [ ] Task Scheduler trigger confirmed as monthly on the first calendar day
+- [ ] `aa_rebal` Anaconda environment access and dependency ownership transferred
 - [ ] Dry run completed and outputs reviewed together
 - [ ] Full run completed and database result validated together
 - [ ] Downstream consumers of `index_constituents_monthly` identified
