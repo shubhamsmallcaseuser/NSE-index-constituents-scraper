@@ -384,38 +384,3 @@ When changing an endpoint, alias, output field, database mapping, or dependency:
 7. Update this README when behavior, ownership, scheduling, configuration, or downstream usage changes.
 
 No automated test suite is currently included, so the dry run and data validation checks are the regression test for this project.
-
-## Security and offboarding
-
-- `db_config.yaml` may contain a live database password and Slack webhook. Transfer it only through the firm's approved secret-management channel.
-- Do not paste credentials or webhook URLs into chat, email, tickets, logs, screenshots, or this README.
-- Rotate credentials and webhook access according to the firm's offboarding policy.
-- Recreate `.venv` on the successor's machine rather than copying it.
-- Review database grants, RDP access, Google Drive ownership, scheduler/service-account ownership, the `aa_rebal` environment, and Slack ownership during the transfer.
-
-## Successor handover checklist
-
-- [ ] Repository access transferred
-- [ ] Database credentials transferred securely and tested
-- [ ] `symbology_changes` ownership and data-refresh process explained
-- [ ] Destination table permissions tested with a full run
-- [ ] Slack webhook and `_SLACK_MENTIONS` reassigned
-- [ ] RDP host access transferred and tested
-- [ ] Google Drive production-folder access transferred and `G:` mount verified
-- [ ] Task Scheduler task name, exact start time, run-as account, and credential owner recorded
-- [ ] Task Scheduler trigger confirmed as monthly on the first calendar day
-- [ ] `aa_rebal` Anaconda environment access and dependency ownership transferred
-- [ ] Dry run completed and outputs reviewed together
-- [ ] Full run completed and database result validated together
-- [ ] Downstream consumers of `index_constituents_monthly` identified
-- [ ] Credentials rotated if required by offboarding policy
-
-## Ownership
-
-At the time of handover, Slack alerts mention `@srivatsa.rao` and `@shubham.shreshtha`. The successor should replace these values in `_SLACK_MENTIONS` with the new operational owners and record the team escalation route here.
-
-| Handover role | Assignee |
-|---|---|
-| New primary owner | _To be assigned_ |
-| Backup owner | _To be assigned_ |
-| Escalation channel | _To be assigned_ |
