@@ -1,0 +1,28 @@
+# NSE Index Constituents Scraper — pinned dependencies
+# Recreate env:
+#   python -m venv .venv
+#   .venv\Scripts\activate
+#   pip install -r requirements.txt
+
+# ── Direct dependencies ───────────────────────────────────────────────────────
+curl_cffi==0.14.0          # Chrome TLS impersonation — required to bypass NSE's TLS fingerprint check
+pandas==3.0.2
+sqlalchemy==2.0.49
+psycopg2-binary==2.9.11    # PostgreSQL driver
+pyyaml==6.0.3
+openpyxl==3.1.5            # Excel writer used by pandas ExcelWriter
+
+# ── Transitive dependencies (pinned for exact reproducibility) ────────────────
+certifi==2026.2.25
+cffi==2.0.0
+charset-normalizer==3.4.6
+et_xmlfile==2.0.0
+greenlet==3.4.0
+idna==3.11
+numpy==2.4.4
+pycparser==3.0
+python-dateutil==2.9.0.post0
+requests==2.33.1
+six==1.17.0
+tzdata==2025.3
+urllib3==2.6.3

@@ -1,0 +1,9 @@
+# Logs
+*.log
+
+# Config (contains DB credentials / Slack webhook)
+*.yaml
+*.yml
+
+# Virtual environment
+.venv/
